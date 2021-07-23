@@ -24,8 +24,8 @@ encode{{classname}} model =
 {{#lambda.camelcase}}encode{{#discriminator}}Base{{/discriminator}}{{classname}}Pairs{{/lambda.camelcase}} : {{#discriminator}}Base{{/discriminator}}{{classname}} -> List EncodedField
 {{#lambda.camelcase}}encode{{#discriminator}}Base{{/discriminator}}{{classname}}Pairs{{/lambda.camelcase}} model =
     let
-        pairs =
-{{#vars}}            {{#-first}}[{{/-first}}{{^-first}},{{/-first}} {{>recordFieldEncoder}}
+        pairs = [
+{{#vars}}            {{^-first}},{{/-first}} {{>recordFieldEncoder}}
 {{/vars}}
             ]
     in
