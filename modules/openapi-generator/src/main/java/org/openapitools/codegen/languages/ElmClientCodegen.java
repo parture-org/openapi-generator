@@ -273,6 +273,70 @@ public class ElmClientCodegen extends DefaultCodegen implements CodegenConfig {
     public Map<String, Object> postProcessAllModels(final Map<String, Object> orgObjs) {
         final Map<String, Object> objs = super.postProcessAllModels(orgObjs);
 
+        //Index all CodegenModels by model name.
+        Map<String, CodegenModel> allModels = new HashMap<String, CodegenModel>();
+        for (Map.Entry<String, Object> entry : objs.entrySet()) {
+            String modelName = toModelName(entry.getKey());
+            Map<String, Object> inner = (Map<String, Object>) entry.getValue();
+            List<Map<String, Object>> models = (List<Map<String, Object>>) inner.get("models");
+            for (Map<String, Object> mo : models) {
+                CodegenModel cm = (CodegenModel) mo.get("model");
+                allModels.put(modelName, cm);
+            }
+        }
+
+        for (Map.Entry<String, CodegenModel> entry : allModels.entrySet()) {
+            String modelName = entry.getKey();
+            CodegenModel model = (CodegenModel) entry.getValue();
+
+            // if the model has a discriminator and a composition structure,
+            // go over child models and adjust classnames, or we end up
+            // with this NameOneOfX stuff
+            if (model.discriminator != null && !model.oneOf.isEmpty()) {
+                // get discriminator property name
+                String discriminatorProp = model.discriminator.getPropertyName();
+
+                // copy here to prevent concurrentmodificationexception
+                Set<String> newOneOfNames = new HashSet<String>();
+
+                // find the discriminator property value for this child
+                for (String oneOfChildName : model.oneOf) {
+                    CodegenModel oneOfChild = (CodegenModel) allModels.get(oneOfChildName);
+
+                    newOneOfNames.add(oneOfChildName);
+
+                    for (CodegenProperty prop : oneOfChild.getAllVars()) {
+                        if (prop.name.equals(discriminatorProp) && prop.isEnum) {
+                            // get enum value...
+                            String childClassName = prop.get_enum().get(0);
+                            // .. and replace classname
+                            String newName = oneOfChildName.replaceAll("OneOf([0-9]*)", childClassName);
+                            // set new
+                            oneOfChild.setClassname(newName);
+                            oneOfChild.setName(newName);
+                            oneOfChild.classVarName = newName.toLowerCase();
+                            newOneOfNames.remove(oneOfChildName);
+                            newOneOfNames.add(newName);
+                            // update container
+                            Map<String, Object> modelProperties = (Map<String, Object>) objs.get(oneOfChildName);
+                            List<Map<String, Object>> modelPropertiesModels = (List<Map<String, Object>>) modelProperties.get("models");
+                            for (Map<String, Object> mo : modelPropertiesModels) {
+                                CodegenModel cm = (CodegenModel) mo.get("model");
+                                if (cm.classFilename.equals(oneOfChild.classFilename)) {
+                                    mo.put("model", oneOfChild);
+                                    break;
+                                }
+                            }
+                            // quit loop
+                            break;
+                        }
+                    }
+                }
+
+                model.oneOf = newOneOfNames;
+            }
+        }
+
         // put all models in one file
         final Map<String, Object> objects = new HashMap<>();
         final Map<String, Object> dataObj = objs.values().stream()
