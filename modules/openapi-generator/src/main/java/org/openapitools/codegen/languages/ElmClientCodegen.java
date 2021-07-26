@@ -270,10 +270,14 @@ public class ElmClientCodegen extends DefaultCodegen implements CodegenConfig {
     }
 
     @SuppressWarnings({"static-method", "unchecked"})
+    // todo: this whole hassle with iterating Object maps is terrible.
+    // todo: would have been great if all that stuff was wrapped in
+    // todo: a "Index" kind of wrapper
     public Map<String, Object> postProcessAllModels(final Map<String, Object> orgObjs) {
         final Map<String, Object> objs = super.postProcessAllModels(orgObjs);
 
         //Index all CodegenModels by model name.
+        // todo: find/make helper
         Map<String, CodegenModel> allModels = new HashMap<String, CodegenModel>();
         for (Map.Entry<String, Object> entry : objs.entrySet()) {
             String modelName = toModelName(entry.getKey());
@@ -285,39 +289,45 @@ public class ElmClientCodegen extends DefaultCodegen implements CodegenConfig {
             }
         }
 
+        // todo: find/make helper
         for (Map.Entry<String, CodegenModel> entry : allModels.entrySet()) {
             String modelName = entry.getKey();
             CodegenModel model = (CodegenModel) entry.getValue();
 
             // if the model has a discriminator and a composition structure,
             // go over child models and adjust classnames, or we end up
-            // with this NameOneOfX stuff
+            // with this NameOneOfX stuff.
+            // TODO: also support anyOf / allOf
             if (model.discriminator != null && !model.oneOf.isEmpty()) {
                 // get discriminator property name
                 String discriminatorProp = model.discriminator.getPropertyName();
 
-                // copy here to prevent concurrentmodificationexception
+                // copy here to prevent concurrentmodificationexception.
+                // Rust's language design suddenly looking lovely
                 Set<String> newOneOfNames = new HashSet<String>();
 
                 // find the discriminator property value for this child
                 for (String oneOfChildName : model.oneOf) {
                     CodegenModel oneOfChild = (CodegenModel) allModels.get(oneOfChildName);
 
+                    // add default name for when we dont find discriminator prop
                     newOneOfNames.add(oneOfChildName);
 
+                    // go over properties and find the one designated as discriminator
                     for (CodegenProperty prop : oneOfChild.getAllVars()) {
                         if (prop.name.equals(discriminatorProp) && prop.isEnum) {
                             // get enum value...
                             String childClassName = prop.get_enum().get(0);
                             // .. and replace classname
                             String newName = oneOfChildName.replaceAll("OneOf([0-9]*)", childClassName);
-                            // set new
+                            // set new (todo: should be wrapped in fn in Codegenmodel)
                             oneOfChild.setClassname(newName);
                             oneOfChild.setName(newName);
                             oneOfChild.classVarName = newName.toLowerCase();
                             newOneOfNames.remove(oneOfChildName);
                             newOneOfNames.add(newName);
                             // update container
+                            // todo: find/make helper
                             Map<String, Object> modelProperties = (Map<String, Object>) objs.get(oneOfChildName);
                             List<Map<String, Object>> modelPropertiesModels = (List<Map<String, Object>>) modelProperties.get("models");
                             for (Map<String, Object> mo : modelPropertiesModels) {
@@ -333,6 +343,8 @@ public class ElmClientCodegen extends DefaultCodegen implements CodegenConfig {
                     }
                 }
 
+                // we cannot adjust this during the loop,
+                // has to be done in bulk
                 model.oneOf = newOneOfNames;
             }
         }
