@@ -269,27 +269,13 @@ public class ElmClientCodegen extends DefaultCodegen implements CodegenConfig {
         }
     }
 
-    @SuppressWarnings({"static-method", "unchecked"})
     // todo: this whole hassle with iterating Object maps is terrible.
     // todo: would have been great if all that stuff was wrapped in
     // todo: a "Index" kind of wrapper
-    public Map<String, Object> postProcessAllModels(final Map<String, Object> orgObjs) {
-        final Map<String, Object> objs = super.postProcessAllModels(orgObjs);
-
+    public Map<String, Object> renameOneOfModels(Map<String, Object> objs) {
         //Index all CodegenModels by model name.
-        // todo: find/make helper
-        Map<String, CodegenModel> allModels = new HashMap<String, CodegenModel>();
-        for (Map.Entry<String, Object> entry : objs.entrySet()) {
-            String modelName = toModelName(entry.getKey());
-            Map<String, Object> inner = (Map<String, Object>) entry.getValue();
-            List<Map<String, Object>> models = (List<Map<String, Object>>) inner.get("models");
-            for (Map<String, Object> mo : models) {
-                CodegenModel cm = (CodegenModel) mo.get("model");
-                allModels.put(modelName, cm);
-            }
-        }
+        Map<String, CodegenModel> allModels = indexModelsByName(objs);
 
-        // todo: find/make helper
         for (Map.Entry<String, CodegenModel> entry : allModels.entrySet()) {
             String modelName = entry.getKey();
             CodegenModel model = (CodegenModel) entry.getValue();
@@ -319,11 +305,11 @@ public class ElmClientCodegen extends DefaultCodegen implements CodegenConfig {
                             // get enum value...
                             String childClassName = prop.get_enum().get(0);
                             // .. and replace classname
-                            String newName = oneOfChildName.replaceAll("OneOf([0-9]*)", childClassName);
+                            String newName = oneOfChildName.replaceAll("OneOf([0-9]*)", camelize(childClassName));
                             // set new (todo: should be wrapped in fn in Codegenmodel)
                             oneOfChild.setClassname(newName);
                             oneOfChild.setName(newName);
-                            oneOfChild.classVarName = newName.toLowerCase();
+                            oneOfChild.classVarName = newName.toLowerCase(Locale.ROOT);
                             newOneOfNames.remove(oneOfChildName);
                             newOneOfNames.add(newName);
                             // update container
@@ -349,48 +335,70 @@ public class ElmClientCodegen extends DefaultCodegen implements CodegenConfig {
             }
         }
 
+        return objs;
+    }
+
+    // todo: move to base class or utils
+    public Map<String, CodegenModel> indexModelsByName(final Map<String, Object> objs) {
+        Map<String, CodegenModel> allModels = new HashMap<String, CodegenModel>();
+        for (Map.Entry<String, Object> entry : objs.entrySet()) {
+            String modelName = toModelName(entry.getKey());
+            Map<String, Object> inner = (Map<String, Object>) entry.getValue();
+            List<Map<String, Object>> models = (List<Map<String, Object>>) inner.get("models");
+            for (Map<String, Object> mo : models) {
+                CodegenModel cm = (CodegenModel) mo.get("model");
+                allModels.put(modelName, cm);
+            }
+        }
+        return allModels;
+    }
+
+    // todo: this whole hassle with iterating Object maps is terrible.
+    // todo: would have been great if all that stuff was wrapped in
+    // todo: a "Index" kind of wrapper
+    public Map<String, Object> putAllModelsInSingleFile(final Map<String, Object> objs) {
         // put all models in one file
         final Map<String, Object> objects = new HashMap<>();
         final Map<String, Object> dataObj = objs.values().stream()
-            .map(obj -> (Map<String, Object>) obj)
-            .findFirst()
-            .orElse(new HashMap<>());
+                .map(obj -> (Map<String, Object>) obj)
+                .findFirst()
+                .orElse(new HashMap<>());
         final List<Map<String, Object>> models = objs.values().stream()
-            .map(obj -> (Map<String, Object>) obj)
-            .flatMap(obj -> ((List<Map<String, Object>>) obj.get("models")).stream())
-            .flatMap(obj -> {
-                final CodegenModel model = (CodegenModel) obj.get("model");
-                // circular references
-                model.vars.forEach(var -> {
-                    var.isCircularReference = model.allVars.stream()
-                        .filter(v -> var.baseName.equals(v.baseName))
-                        .map(v -> v.isCircularReference)
-                        .findAny()
-                        .orElse(false);
-                    CodegenProperty items = var.items;
-                    while (items != null) {
-                        items.isCircularReference = var.isCircularReference;
-                        items.required = true;
-                        items = items.items;
-                    }
-                });
-                // discriminators
-                if (model.discriminator != null && model.getChildren() != null) {
-                    model.getChildren().forEach(child -> {
-                        child.allOf = child.allOf.stream()
-                            .map(v -> model.classname.equals(v) ? "Base" + v : v)
-                            .collect(Collectors.toSet());
+                .map(obj -> (Map<String, Object>) obj)
+                .flatMap(obj -> ((List<Map<String, Object>>) obj.get("models")).stream())
+                .flatMap(obj -> {
+                    final CodegenModel model = (CodegenModel) obj.get("model");
+                    // circular references
+                    model.vars.forEach(var -> {
+                        var.isCircularReference = model.allVars.stream()
+                                .filter(v -> var.baseName.equals(v.baseName))
+                                .map(v -> v.isCircularReference)
+                                .findAny()
+                                .orElse(false);
+                        CodegenProperty items = var.items;
+                        while (items != null) {
+                            items.isCircularReference = var.isCircularReference;
+                            items.required = true;
+                            items = items.items;
+                        }
                     });
-                }
-                // remove *AllOf
-                if (model.classname.endsWith("AllOf")) {
-                    return Stream.empty();
-                } else {
-                    model.allOf.removeIf(name -> name.endsWith("AllOf"));
-                    return Stream.of(obj);
-                }
-            })
-            .collect(Collectors.toList());
+                    // discriminators
+                    if (model.discriminator != null && model.getChildren() != null) {
+                        model.getChildren().forEach(child -> {
+                            child.allOf = child.allOf.stream()
+                                    .map(v -> model.classname.equals(v) ? "Base" + v : v)
+                                    .collect(Collectors.toSet());
+                        });
+                    }
+                    // remove *AllOf
+                    if (model.classname.endsWith("AllOf")) {
+                        return Stream.empty();
+                    } else {
+                        model.allOf.removeIf(name -> name.endsWith("AllOf"));
+                        return Stream.of(obj);
+                    }
+                })
+                .collect(Collectors.toList());
 
         final boolean includeTime = anyVarMatches(models, prop -> prop.isDate || prop.isDateTime);
         final boolean includeUuid = anyVarMatches(models, prop -> prop.isUuid);
@@ -400,6 +408,18 @@ public class ElmClientCodegen extends DefaultCodegen implements CodegenConfig {
         dataObj.put("includeUuid", includeUuid);
         objects.put("Data", dataObj);
         return objects;
+    }
+
+    @SuppressWarnings({"static-method", "unchecked"})
+    public Map<String, Object> postProcessAllModels(final Map<String, Object> orgObjs) {
+        // run superclass stuff
+        Map<String, Object> objs = super.postProcessAllModels(orgObjs);
+
+        // rename all oneOf children using their own classname
+        objs = renameOneOfModels(objs);
+
+        // dump all models in single Data.elm file
+        return putAllModelsInSingleFile(objs);
     }
 
     private boolean anyVarMatches(final List<Map<String, Object>> models, final Predicate<CodegenProperty> predicate) {
