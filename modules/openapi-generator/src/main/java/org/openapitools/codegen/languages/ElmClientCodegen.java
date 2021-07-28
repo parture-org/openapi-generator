@@ -41,6 +41,8 @@ import java.util.stream.Stream;
 
 import static org.openapitools.codegen.utils.StringUtils.camelize;
 
+// todo: dont generate enum prefixed (class names) based on 'removeEnumValuePrefix' codegen config value
+
 public class ElmClientCodegen extends DefaultCodegen implements CodegenConfig {
     private final Logger LOGGER = LoggerFactory.getLogger(ElmClientCodegen.class);
 
