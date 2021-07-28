@@ -3,7 +3,7 @@
 {{#isDate}}Api.Time.encodeDate{{/isDate}}
 {{#isByteArray}}Json.Encode.string{{/isByteArray}}
 {{#isBinary}}Json.Decode.string{{/isBinary}}
-{{#isString}}{{^isEnum}}{{^isUuid}}Json.Encode.string{{/isUuid}}{{/isEnum}}{{/isString}}
+{{#isString}}{{#isEnum}}encode{{classname}}{{enumName}}{{/isEnum}}{{^isEnum}}{{^isUuid}}Json.Encode.string{{/isUuid}}{{/isEnum}}{{/isString}}
 {{#isInteger}}Json.Encode.int{{/isInteger}}
 {{#isLong}}Json.Encode.int{{/isLong}}
 {{#isNumber}}Json.Encode.float{{/isNumber}}
